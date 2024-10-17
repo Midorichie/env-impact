@@ -1,146 +1,247 @@
-# Directory Structure
-ai_environmental_impact/
-├── src/
-│   ├── python/
-│   │   ├── carbon_calculator.py
-│   │   ├── data_processor.py
-│   │   └── __init__.py
-│   ├── rust/
-│   │   └── metrics/
-│   │       ├── Cargo.toml
-│   │       └── src/
-│   │           └── lib.rs
-│   └── clarity/
-│       └── contracts/
-│           └── carbon-tracker.clar
-├── tests/
-│   ├── python/
-│   │   └── test_carbon_calculator.py
-│   └── rust/
-│       └── test_metrics.rs
-├── README.md
-└── requirements.txt
+# Enhanced Carbon Calculator with Real-time Monitoring
+# src/python/enhanced_carbon_calculator.py
 
-# carbon_calculator.py
-class CarbonFootprintCalculator:
+from dataclasses import dataclass
+from typing import List, Dict
+import time
+import json
+from datetime import datetime
+
+@dataclass
+class HardwareProfile:
+    gpu_model: str
+    tdp_watts: float
+    efficiency_factor: float
+
+class EnhancedCarbonCalculator:
     def __init__(self):
-        self.energy_per_gpu_hour = 1.5  # kWh per GPU hour
-        self.carbon_per_kwh = 0.475  # kg CO2 per kWh (global average)
+        self.hardware_profiles = {
+            "NVIDIA_A100": HardwareProfile("A100", 400, 1.2),
+            "NVIDIA_V100": HardwareProfile("V100", 300, 1.1),
+            "NVIDIA_T4": HardwareProfile("T4", 70, 1.0)
+        }
+        self.location_carbon_intensity = {
+            "US_EAST": 0.4,
+            "US_WEST": 0.2,
+            "EU_WEST": 0.3,
+            "ASIA_EAST": 0.6
+        }
+        self.monitoring_data = []
 
-    def calculate_training_emissions(self, gpu_count: int, training_hours: float) -> dict:
-        """
-        Calculate CO2 emissions for AI model training
+    def calculate_detailed_emissions(
+        self,
+        gpu_model: str,
+        gpu_count: int,
+        training_hours: float,
+        location: str,
+        workload_type: str
+    ) -> Dict:
+        hardware = self.hardware_profiles[gpu_model]
+        carbon_intensity = self.location_carbon_intensity[location]
         
-        Args:
-            gpu_count: Number of GPUs used
-            training_hours: Duration of training in hours
+        # Calculate energy consumption with hardware-specific factors
+        energy_consumption = (
+            hardware.tdp_watts * 
+            gpu_count * 
+            training_hours * 
+            hardware.efficiency_factor / 
+            1000  # Convert to kWh
+        )
         
-        Returns:
-            Dictionary containing emissions data
-        """
-        energy_consumption = gpu_count * training_hours * self.energy_per_gpu_hour
-        carbon_emissions = energy_consumption * self.carbon_per_kwh
+        # Calculate emissions with location-specific carbon intensity
+        carbon_emissions = energy_consumption * carbon_intensity
         
-        return {
-            "energy_consumption_kwh": energy_consumption,
-            "carbon_emissions_kg": carbon_emissions,
+        # Calculate cost estimates (assuming $0.12 per kWh)
+        energy_cost = energy_consumption * 0.12
+        
+        timestamp = datetime.now().isoformat()
+        
+        metrics = {
+            "timestamp": timestamp,
+            "gpu_model": gpu_model,
             "gpu_count": gpu_count,
-            "training_hours": training_hours
+            "location": location,
+            "workload_type": workload_type,
+            "energy_consumption_kwh": round(energy_consumption, 2),
+            "carbon_emissions_kg": round(carbon_emissions, 2),
+            "energy_cost_usd": round(energy_cost, 2),
+            "efficiency_metrics": {
+                "emissions_per_gpu": round(carbon_emissions / gpu_count, 2),
+                "cost_per_hour": round(energy_cost / training_hours, 2)
+            }
         }
+        
+        self.monitoring_data.append(metrics)
+        return metrics
 
-    def calculate_inference_emissions(self, requests_per_hour: int, hours: float) -> dict:
-        """
-        Calculate CO2 emissions for model inference
-        
-        Args:
-            requests_per_hour: Number of inference requests per hour
-            hours: Duration of operation in hours
-        
-        Returns:
-            Dictionary containing emissions data
-        """
-        energy_per_request = 0.0001  # kWh per inference request
-        total_requests = requests_per_hour * hours
-        energy_consumption = total_requests * energy_per_request
-        carbon_emissions = energy_consumption * self.carbon_per_kwh
+    def get_historical_trends(self) -> Dict:
+        if not self.monitoring_data:
+            return {"error": "No historical data available"}
+            
+        total_emissions = sum(d["carbon_emissions_kg"] for d in self.monitoring_data)
+        total_energy = sum(d["energy_consumption_kwh"] for d in self.monitoring_data)
+        total_cost = sum(d["energy_cost_usd"] for d in self.monitoring_data)
         
         return {
-            "energy_consumption_kwh": energy_consumption,
-            "carbon_emissions_kg": carbon_emissions,
-            "total_requests": total_requests,
-            "operation_hours": hours
+            "total_emissions_kg": round(total_emissions, 2),
+            "total_energy_kwh": round(total_energy, 2),
+            "total_cost_usd": round(total_cost, 2),
+            "data_points": len(self.monitoring_data),
+            "emissions_by_location": self._aggregate_by_field("location"),
+            "emissions_by_gpu": self._aggregate_by_field("gpu_model")
         }
 
-# carbon-tracker.clar
-(define-data-var total-emissions uint u0)
-(define-data-var emissions-by-model (map principal uint) {})
+    def _aggregate_by_field(self, field: str) -> Dict:
+        result = {}
+        for entry in self.monitoring_data:
+            key = entry[field]
+            if key not in result:
+                result[key] = 0
+            result[key] += entry["carbon_emissions_kg"]
+        return {k: round(v, 2) for k, v in result.items()}
 
-(define-public (record-emissions (amount uint))
-    (let ((current-emissions (var-get total-emissions))
-          (sender tx-sender))
+# Enhanced Smart Contract for Carbon Tracking
+# src/clarity/contracts/enhanced-carbon-tracker.clar
+
+(define-map carbon-credits 
+    { owner: principal } 
+    { balance: uint, 
+      emissions-offset: uint })
+
+(define-map emission-records
+    { model: principal,
+      timestamp: uint }
+    { amount: uint,
+      location: (string-ascii 32),
+      gpu-count: uint,
+      energy-consumed: uint })
+
+(define-public (record-detailed-emission
+    (amount uint)
+    (location (string-ascii 32))
+    (gpu-count uint)
+    (energy-consumed uint))
+    (let ((sender tx-sender)
+          (timestamp (get-block-height)))
         (begin
-            (var-set total-emissions (+ current-emissions amount))
-            (map-set emissions-by-model
-                     sender
-                     (+ (default-to u0 (map-get? emissions-by-model sender)) amount))
+            (map-set emission-records
+                { model: sender,
+                  timestamp: timestamp }
+                { amount: amount,
+                  location: location,
+                  gpu-count: gpu-count,
+                  energy-consumed: energy-consumed })
             (ok true))))
 
-(define-read-only (get-total-emissions)
-    (ok (var-get total-emissions)))
+(define-public (purchase-carbon-credits (amount uint))
+    (let ((sender tx-sender)
+          (current-balance (default-to { balance: u0, emissions-offset: u0 }
+                            (map-get? carbon-credits { owner: sender }))))
+        (begin
+            (map-set carbon-credits
+                { owner: sender }
+                { balance: (+ amount (get balance current-balance)),
+                  emissions-offset: (get emissions-offset current-balance) })
+            (ok true))))
 
-(define-read-only (get-model-emissions (model principal))
-    (ok (default-to u0 (map-get? emissions-by-model model))))
+(define-read-only (get-emission-history (model principal))
+    (map-get? emission-records { model: model,
+                                timestamp: (get-block-height) }))
 
-# lib.rs
-use std::sync::atomic::{AtomicU64, Ordering};
+# Enhanced Performance Metrics in Rust
+# src/rust/metrics/src/lib.rs
 
-pub struct PerformanceMetrics {
-    total_operations: AtomicU64,
-    energy_consumption: AtomicU64,
+use chrono::{DateTime, Utc};
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnhancedMetrics {
+    timestamp: DateTime<Utc>,
+    operation_type: String,
+    energy_consumption: f64,
+    duration_ms: u64,
+    gpu_utilization: f64,
+    memory_utilization: f64,
 }
 
-impl PerformanceMetrics {
+pub struct RealTimeMonitor {
+    metrics_history: Arc<Mutex<Vec<EnhancedMetrics>>>,
+    current_operations: Arc<Mutex<HashMap<String, u64>>>,
+}
+
+impl RealTimeMonitor {
     pub fn new() -> Self {
         Self {
-            total_operations: AtomicU64::new(0),
-            energy_consumption: AtomicU64::new(0),
+            metrics_history: Arc::new(Mutex::new(Vec::new())),
+            current_operations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn record_operation(&self, operation_energy: u64) {
-        self.total_operations.fetch_add(1, Ordering::SeqCst);
-        self.energy_consumption.fetch_add(operation_energy, Ordering::SeqCst);
+    pub fn record_metrics(&self, metrics: EnhancedMetrics) {
+        let mut history = self.metrics_history.lock().unwrap();
+        history.push(metrics);
     }
 
-    pub fn get_metrics(&self) -> (u64, u64) {
-        (
-            self.total_operations.load(Ordering::SeqCst),
-            self.energy_consumption.load(Ordering::SeqCst),
-        )
+    pub fn get_analytics(&self) -> HashMap<String, f64> {
+        let history = self.metrics_history.lock().unwrap();
+        let mut analytics = HashMap::new();
+        
+        if history.is_empty() {
+            return analytics;
+        }
+
+        let total_energy: f64 = history.iter()
+            .map(|m| m.energy_consumption)
+            .sum();
+        let avg_duration: f64 = history.iter()
+            .map(|m| m.duration_ms as f64)
+            .sum::<f64>() / history.len() as f64;
+        
+        analytics.insert("total_energy_consumption".to_string(), total_energy);
+        analytics.insert("average_duration_ms".to_string(), avg_duration);
+        analytics.insert("total_operations".to_string(), history.len() as f64);
+        
+        analytics
     }
 }
 
-# test_carbon_calculator.py
+# Tests for Enhanced Implementation
+# tests/python/test_enhanced_calculator.py
+
 import unittest
-from src.python.carbon_calculator import CarbonFootprintCalculator
+from src.python.enhanced_carbon_calculator import EnhancedCarbonCalculator
 
-class TestCarbonCalculator(unittest.TestCase):
+class TestEnhancedCalculator(unittest.TestCase):
     def setUp(self):
-        self.calculator = CarbonFootprintCalculator()
+        self.calculator = EnhancedCarbonCalculator()
 
-    def test_training_emissions(self):
-        result = self.calculator.calculate_training_emissions(
+    def test_detailed_emissions(self):
+        result = self.calculator.calculate_detailed_emissions(
+            gpu_model="NVIDIA_A100",
             gpu_count=4,
-            training_hours=24
+            training_hours=24,
+            location="US_EAST",
+            workload_type="training"
         )
+        
+        self.assertIn("timestamp", result)
+        self.assertIn("efficiency_metrics", result)
         self.assertGreater(result["carbon_emissions_kg"], 0)
-        self.assertEqual(result["gpu_count"], 4)
-        self.assertEqual(result["training_hours"], 24)
+        self.assertGreater(result["energy_cost_usd"], 0)
 
-    def test_inference_emissions(self):
-        result = self.calculator.calculate_inference_emissions(
-            requests_per_hour=1000,
-            hours=24
+    def test_historical_trends(self):
+        # Add some test data
+        self.calculator.calculate_detailed_emissions(
+            gpu_model="NVIDIA_A100",
+            gpu_count=4,
+            training_hours=24,
+            location="US_EAST",
+            workload_type="training"
         )
-        self.assertGreater(result["carbon_emissions_kg"], 0)
-        self.assertEqual(result["total_requests"], 24000)
+        
+        trends = self.calculator.get_historical_trends()
+        self.assertIn("total_emissions_kg", trends)
+        self.assertIn("emissions_by_location", trends)
+        self.assertIn("emissions_by_gpu", trends)
