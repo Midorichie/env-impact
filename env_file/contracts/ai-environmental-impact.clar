@@ -1,247 +1,285 @@
-# Enhanced Carbon Calculator with Real-time Monitoring
-# src/python/enhanced_carbon_calculator.py
+# Advanced Carbon Management System with ML Optimization
+# src/python/ml_optimized_carbon_system.py
 
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from typing import Dict, List, Tuple, Optional
+import pandas as pd
 from dataclasses import dataclass
-from typing import List, Dict
-import time
-import json
-from datetime import datetime
+import tensorflow as tf
+import threading
+import queue
 
 @dataclass
-class HardwareProfile:
-    gpu_model: str
-    tdp_watts: float
-    efficiency_factor: float
+class OptimizationRecommendation:
+    action: str
+    estimated_savings: float
+    confidence: float
+    implementation_cost: float
+    roi_period: float
 
-class EnhancedCarbonCalculator:
+class MLOptimizedCarbonSystem:
     def __init__(self):
-        self.hardware_profiles = {
-            "NVIDIA_A100": HardwareProfile("A100", 400, 1.2),
-            "NVIDIA_V100": HardwareProfile("V100", 300, 1.1),
-            "NVIDIA_T4": HardwareProfile("T4", 70, 1.0)
-        }
-        self.location_carbon_intensity = {
-            "US_EAST": 0.4,
-            "US_WEST": 0.2,
-            "EU_WEST": 0.3,
-            "ASIA_EAST": 0.6
-        }
-        self.monitoring_data = []
-
-    def calculate_detailed_emissions(
-        self,
-        gpu_model: str,
-        gpu_count: int,
-        training_hours: float,
-        location: str,
-        workload_type: str
-    ) -> Dict:
-        hardware = self.hardware_profiles[gpu_model]
-        carbon_intensity = self.location_carbon_intensity[location]
-        
-        # Calculate energy consumption with hardware-specific factors
-        energy_consumption = (
-            hardware.tdp_watts * 
-            gpu_count * 
-            training_hours * 
-            hardware.efficiency_factor / 
-            1000  # Convert to kWh
+        self.model = RandomForestRegressor(n_estimators=100)
+        self.prediction_queue = queue.Queue()
+        self.optimization_thread = threading.Thread(
+            target=self._continuous_optimization_loop,
+            daemon=True
         )
-        
-        # Calculate emissions with location-specific carbon intensity
-        carbon_emissions = energy_consumption * carbon_intensity
-        
-        # Calculate cost estimates (assuming $0.12 per kWh)
-        energy_cost = energy_consumption * 0.12
-        
-        timestamp = datetime.now().isoformat()
-        
-        metrics = {
-            "timestamp": timestamp,
-            "gpu_model": gpu_model,
-            "gpu_count": gpu_count,
-            "location": location,
-            "workload_type": workload_type,
-            "energy_consumption_kwh": round(energy_consumption, 2),
-            "carbon_emissions_kg": round(carbon_emissions, 2),
-            "energy_cost_usd": round(energy_cost, 2),
-            "efficiency_metrics": {
-                "emissions_per_gpu": round(carbon_emissions / gpu_count, 2),
-                "cost_per_hour": round(energy_cost / training_hours, 2)
-            }
-        }
-        
-        self.monitoring_data.append(metrics)
-        return metrics
+        self.historical_data = []
+        self.start_monitoring()
 
-    def get_historical_trends(self) -> Dict:
-        if not self.monitoring_data:
-            return {"error": "No historical data available"}
-            
-        total_emissions = sum(d["carbon_emissions_kg"] for d in self.monitoring_data)
-        total_energy = sum(d["energy_consumption_kwh"] for d in self.monitoring_data)
-        total_cost = sum(d["energy_cost_usd"] for d in self.monitoring_data)
+    def start_monitoring(self):
+        self.optimization_thread.start()
+
+    def _continuous_optimization_loop(self):
+        while True:
+            try:
+                current_metrics = self.prediction_queue.get(timeout=60)
+                recommendations = self._generate_recommendations(current_metrics)
+                self._apply_optimizations(recommendations)
+            except queue.Empty:
+                continue
+
+    def predict_emissions(self, workload_params: Dict) -> Dict:
+        features = self._extract_features(workload_params)
+        predicted_emissions = self.model.predict([features])[0]
         
         return {
-            "total_emissions_kg": round(total_emissions, 2),
-            "total_energy_kwh": round(total_energy, 2),
-            "total_cost_usd": round(total_cost, 2),
-            "data_points": len(self.monitoring_data),
-            "emissions_by_location": self._aggregate_by_field("location"),
-            "emissions_by_gpu": self._aggregate_by_field("gpu_model")
+            "predicted_emissions": predicted_emissions,
+            "confidence_interval": self._calculate_confidence(features),
+            "optimization_potential": self._assess_optimization_potential(features)
         }
 
-    def _aggregate_by_field(self, field: str) -> Dict:
-        result = {}
-        for entry in self.monitoring_data:
-            key = entry[field]
-            if key not in result:
-                result[key] = 0
-            result[key] += entry["carbon_emissions_kg"]
-        return {k: round(v, 2) for k, v in result.items()}
+    def _extract_features(self, params: Dict) -> List[float]:
+        return [
+            params.get('gpu_count', 0),
+            params.get('batch_size', 0),
+            params.get('training_hours', 0),
+            params.get('model_complexity', 0),
+            self._get_location_factor(params.get('location', 'unknown'))
+        ]
 
-# Enhanced Smart Contract for Carbon Tracking
-# src/clarity/contracts/enhanced-carbon-tracker.clar
+    def _calculate_confidence(self, features: List[float]) -> Tuple[float, float]:
+        predictions = []
+        for estimator in self.model.estimators_:
+            predictions.append(estimator.predict([features])[0])
+        return np.percentile(predictions, [5, 95])
 
-(define-map carbon-credits 
-    { owner: principal } 
-    { balance: uint, 
-      emissions-offset: uint })
+    def _assess_optimization_potential(self, features: List[float]) -> List[OptimizationRecommendation]:
+        recommendations = []
+        
+        # Analyze batch size optimization
+        if features[1] < 128:
+            recommendations.append(
+                OptimizationRecommendation(
+                    action="Increase batch size",
+                    estimated_savings=15.5,
+                    confidence=0.85,
+                    implementation_cost=0,
+                    roi_period=0
+                )
+            )
 
-(define-map emission-records
-    { model: principal,
-      timestamp: uint }
-    { amount: uint,
-      location: (string-ascii 32),
-      gpu-count: uint,
-      energy-consumed: uint })
+        # Analyze GPU utilization
+        if features[0] > 1:
+            recommendations.append(
+                OptimizationRecommendation(
+                    action="Optimize GPU allocation",
+                    estimated_savings=22.3,
+                    confidence=0.92,
+                    implementation_cost=100,
+                    roi_period=4.5
+                )
+            )
 
-(define-public (record-detailed-emission
-    (amount uint)
-    (location (string-ascii 32))
-    (gpu-count uint)
-    (energy-consumed uint))
-    (let ((sender tx-sender)
-          (timestamp (get-block-height)))
+        return recommendations
+
+    def _get_location_factor(self, location: str) -> float:
+        location_factors = {
+            "US_EAST": 0.82,
+            "US_WEST": 0.65,
+            "EU_WEST": 0.45,
+            "ASIA_EAST": 0.95
+        }
+        return location_factors.get(location, 0.8)
+
+# Advanced Carbon Credit Marketplace
+# src/clarity/contracts/carbon-marketplace.clar
+
+(define-map carbon-credit-market
+    { credit-id: uint }
+    { seller: principal,
+      price: uint,
+      amount: uint,
+      verification: (string-ascii 64),
+      expiration: uint })
+
+(define-map user-portfolio
+    { user: principal }
+    { credits: uint,
+      total-offset: uint,
+      trading-history: (list 10 uint) })
+
+(define-constant ERR_INVALID_AMOUNT u1)
+(define-constant ERR_INSUFFICIENT_BALANCE u2)
+(define-constant ERR_EXPIRED u3)
+
+(define-public (list-carbon-credits 
+    (amount uint) 
+    (price uint)
+    (verification (string-ascii 64))
+    (expiration uint))
+    (let ((seller tx-sender)
+          (credit-id (get-next-credit-id)))
         (begin
-            (map-set emission-records
-                { model: sender,
-                  timestamp: timestamp }
-                { amount: amount,
-                  location: location,
-                  gpu-count: gpu-count,
-                  energy-consumed: energy-consumed })
+            (asserts! (> amount u0) (err ERR_INVALID_AMOUNT))
+            (map-set carbon-credit-market
+                { credit-id: credit-id }
+                { seller: seller,
+                  price: price,
+                  amount: amount,
+                  verification: verification,
+                  expiration: expiration })
+            (ok credit-id))))
+
+(define-public (purchase-credits (credit-id uint) (amount uint))
+    (let ((buyer tx-sender)
+          (listing (unwrap! (map-get? carbon-credit-market { credit-id: credit-id })
+                           (err ERR_INVALID_AMOUNT)))
+          (current-block (get-block-height)))
+        (begin
+            (asserts! (<= amount (get amount listing)) (err ERR_INSUFFICIENT_BALANCE))
+            (asserts! (< current-block (get expiration listing)) (err ERR_EXPIRED))
+            
+            ;; Transfer payment
+            (try! (stx-transfer? 
+                   (* amount (get price listing))
+                   buyer
+                   (get seller listing)))
+            
+            ;; Update portfolios
+            (update-portfolio buyer amount)
             (ok true))))
 
-(define-public (purchase-carbon-credits (amount uint))
-    (let ((sender tx-sender)
-          (current-balance (default-to { balance: u0, emissions-offset: u0 }
-                            (map-get? carbon-credits { owner: sender }))))
-        (begin
-            (map-set carbon-credits
-                { owner: sender }
-                { balance: (+ amount (get balance current-balance)),
-                  emissions-offset: (get emissions-offset current-balance) })
-            (ok true))))
+(define-private (update-portfolio (user principal) (amount uint))
+    (let ((current-portfolio (default-to 
+                             { credits: u0, total-offset: u0, trading-history: (list) }
+                             (map-get? user-portfolio { user: user }))))
+        (map-set user-portfolio
+            { user: user }
+            { credits: (+ amount (get credits current-portfolio)),
+              total-offset: (+ amount (get total-offset current-portfolio)),
+              trading-history: (unwrap! (as-max-len? 
+                                       (concat (list amount) 
+                                              (get trading-history current-portfolio))
+                                       u10)
+                                      (list amount)) })))
 
-(define-read-only (get-emission-history (model principal))
-    (map-get? emission-records { model: model,
-                                timestamp: (get-block-height) }))
+# Advanced Real-time Optimization in Rust
+# src/rust/optimization/src/lib.rs
 
-# Enhanced Performance Metrics in Rust
-# src/rust/metrics/src/lib.rs
-
-use chrono::{DateTime, Utc};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EnhancedMetrics {
+pub struct WorkloadMetrics {
     timestamp: DateTime<Utc>,
-    operation_type: String,
-    energy_consumption: f64,
-    duration_ms: u64,
     gpu_utilization: f64,
     memory_utilization: f64,
+    power_consumption: f64,
+    temperature: f64,
+    throughput: f64,
 }
 
-pub struct RealTimeMonitor {
-    metrics_history: Arc<Mutex<Vec<EnhancedMetrics>>>,
-    current_operations: Arc<Mutex<HashMap<String, u64>>>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptimizationResult {
+    recommended_batch_size: u32,
+    recommended_gpu_count: u32,
+    estimated_power_savings: f64,
+    confidence: f64,
 }
 
-impl RealTimeMonitor {
+pub struct RealTimeOptimizer {
+    metrics_history: Arc<Mutex<Vec<WorkloadMetrics>>>,
+    current_optimizations: Arc<Mutex<OptimizationResult>>,
+}
+
+impl RealTimeOptimizer {
     pub fn new() -> Self {
         Self {
             metrics_history: Arc::new(Mutex::new(Vec::new())),
-            current_operations: Arc::new(Mutex::new(HashMap::new())),
+            current_optimizations: Arc::new(Mutex::new(OptimizationResult {
+                recommended_batch_size: 32,
+                recommended_gpu_count: 1,
+                estimated_power_savings: 0.0,
+                confidence: 0.0,
+            })),
         }
     }
 
-    pub fn record_metrics(&self, metrics: EnhancedMetrics) {
-        let mut history = self.metrics_history.lock().unwrap();
-        history.push(metrics);
-    }
-
-    pub fn get_analytics(&self) -> HashMap<String, f64> {
-        let history = self.metrics_history.lock().unwrap();
-        let mut analytics = HashMap::new();
+    pub async fn process_metrics(&self, metrics: WorkloadMetrics) {
+        let mut history = self.metrics_history.lock().await;
+        history.push(metrics.clone());
         
-        if history.is_empty() {
-            return analytics;
+        if history.len() >= 100 {
+            let optimization = self.calculate_optimizations(&history).await;
+            let mut current_opt = self.current_optimizations.lock().await;
+            *current_opt = optimization;
         }
+    }
 
-        let total_energy: f64 = history.iter()
-            .map(|m| m.energy_consumption)
-            .sum();
-        let avg_duration: f64 = history.iter()
-            .map(|m| m.duration_ms as f64)
+    async fn calculate_optimizations(&self, history: &[WorkloadMetrics]) -> OptimizationResult {
+        let avg_utilization = history.iter()
+            .map(|m| m.gpu_utilization)
             .sum::<f64>() / history.len() as f64;
         
-        analytics.insert("total_energy_consumption".to_string(), total_energy);
-        analytics.insert("average_duration_ms".to_string(), avg_duration);
-        analytics.insert("total_operations".to_string(), history.len() as f64);
+        let avg_power = history.iter()
+            .map(|m| m.power_consumption)
+            .sum::<f64>() / history.len() as f64;
         
-        analytics
+        let recommended_gpus = if avg_utilization < 0.7 { 1 } else { 2 };
+        let batch_size = if avg_power > 200.0 { 64 } else { 32 };
+        
+        OptimizationResult {
+            recommended_batch_size: batch_size,
+            recommended_gpu_count: recommended_gpus,
+            estimated_power_savings: (1.0 - avg_utilization) * avg_power,
+            confidence: 0.85,
+        }
     }
 }
 
-# Tests for Enhanced Implementation
-# tests/python/test_enhanced_calculator.py
+# Advanced Testing Suite
+# tests/python/test_ml_optimization.py
 
 import unittest
-from src.python.enhanced_carbon_calculator import EnhancedCarbonCalculator
+from src.python.ml_optimized_carbon_system import MLOptimizedCarbonSystem
 
-class TestEnhancedCalculator(unittest.TestCase):
+class TestMLOptimization(unittest.TestCase):
     def setUp(self):
-        self.calculator = EnhancedCarbonCalculator()
+        self.system = MLOptimizedCarbonSystem()
 
-    def test_detailed_emissions(self):
-        result = self.calculator.calculate_detailed_emissions(
-            gpu_model="NVIDIA_A100",
-            gpu_count=4,
-            training_hours=24,
-            location="US_EAST",
-            workload_type="training"
-        )
+    def test_emission_prediction(self):
+        workload = {
+            "gpu_count": 4,
+            "batch_size": 128,
+            "training_hours": 24,
+            "model_complexity": 0.8,
+            "location": "US_EAST"
+        }
         
-        self.assertIn("timestamp", result)
-        self.assertIn("efficiency_metrics", result)
-        self.assertGreater(result["carbon_emissions_kg"], 0)
-        self.assertGreater(result["energy_cost_usd"], 0)
-
-    def test_historical_trends(self):
-        # Add some test data
-        self.calculator.calculate_detailed_emissions(
-            gpu_model="NVIDIA_A100",
-            gpu_count=4,
-            training_hours=24,
-            location="US_EAST",
-            workload_type="training"
-        )
+        prediction = self.system.predict_emissions(workload)
         
-        trends = self.calculator.get_historical_trends()
-        self.assertIn("total_emissions_kg", trends)
-        self.assertIn("emissions_by_location", trends)
-        self.assertIn("emissions_by_gpu", trends)
+        self.assertIn("predicted_emissions", prediction)
+        self.assertIn("confidence_interval", prediction)
+        self.assertIn("optimization_potential", prediction)
+        
+        recommendations = prediction["optimization_potential"]
+        self.assertTrue(len(recommendations) > 0)
+        for rec in recommendations:
+            self.assertGreater(rec.estimated_savings, 0)
+            self.assertGreater(rec.confidence, 0)
+            self.assertGreaterEqual(rec.implementation_cost, 0)
